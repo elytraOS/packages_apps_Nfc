@@ -428,7 +428,7 @@ public class NfcService implements DeviceHostListener {
 
         mState = NfcAdapter.STATE_OFF;
         mIsNdefPushEnabled = mPrefs.getBoolean(PREF_NDEF_PUSH_ON, NDEF_PUSH_ON_DEFAULT);
-        setBeamShareActivityState(mIsNdefPushEnabled);
+        enforceBeamShareActivityPolicy(mContext, new UserHandle(mUserId));
 
         mIsDebugBuild = "userdebug".equals(Build.TYPE) || "eng".equals(Build.TYPE);
 
@@ -766,26 +766,25 @@ public class NfcService implements DeviceHostListener {
         return mUserId;
     }
 
-    void setBeamShareActivityState(boolean enabled) {
-        UserManager um = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
-        // Propagate the state change to all user profiles related to the current
-        // user. Note that the list returned by getUserProfiles contains the
-        // current user.
-        List <UserHandle> luh = um.getUserProfiles();
-        for (UserHandle uh : luh){
-            enforceBeamShareActivityPolicy(mContext, uh, enabled);
-        }
-    }
-
-    void enforceBeamShareActivityPolicy(Context context, UserHandle uh,
-            boolean isGlobalEnabled){
+    void enforceBeamShareActivityPolicy(Context context, UserHandle uh) {
         UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
         IPackageManager mIpm = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
+        boolean isGlobalEnabled = mIsNdefPushEnabled;
+        if (uh.getIdentifier() != mUserId) {
+            try {
+            int userSetting = mIpm.getComponentEnabledSetting(new ComponentName(
+                    BeamShareActivity.class.getPackageName$(),
+                    BeamShareActivity.class.getName()), uh.getIdentifier());
+            isGlobalEnabled = (userSetting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) ? false : true;
+            } catch (RemoteException e) {
+                Log.w(TAG, "Unable to get Beam status for user " + uh);
+            }
+        }
         boolean isActiveForUser =
                 (!um.hasUserRestriction(UserManager.DISALLOW_OUTGOING_BEAM, uh)) &&
                 isGlobalEnabled;
-        if (DBG){
-            Log.d(TAG, "Enforcing a policy change on user: " + uh +
+        if (DBG) {
+            Log.d(TAG, "Enforcing a policy change on user: " + uh.toString() +
                     ", isActiveForUser = " + isActiveForUser);
         }
         try {
@@ -877,7 +876,7 @@ public class NfcService implements DeviceHostListener {
                 mPrefsEditor.putBoolean(PREF_NDEF_PUSH_ON, true);
                 mPrefsEditor.apply();
                 mIsNdefPushEnabled = true;
-                setBeamShareActivityState(true);
+                enforceBeamShareActivityPolicy(mContext, new UserHandle(mUserId));
                 if (isNfcEnabled()) {
                     mP2pLinkManager.enableDisable(true, true);
                 }
@@ -897,7 +896,7 @@ public class NfcService implements DeviceHostListener {
                 mPrefsEditor.putBoolean(PREF_NDEF_PUSH_ON, false);
                 mPrefsEditor.apply();
                 mIsNdefPushEnabled = false;
-                setBeamShareActivityState(false);
+                enforceBeamShareActivityPolicy(mContext, new UserHandle(mUserId));
                 if (isNfcEnabled()) {
                     mP2pLinkManager.enableDisable(false, true);
                 }
@@ -1115,6 +1114,7 @@ public class NfcService implements DeviceHostListener {
                 } else {
                     try {
                         mReaderModeParams = null;
+                        StopPresenceChecking();
                         binder.unlinkToDeath(mReaderModeDeathRecipient, 0);
                     } catch (NoSuchElementException e) {
                         Log.e(TAG, "Reader mode Binder was never registered.");
@@ -1759,6 +1759,17 @@ public class NfcService implements DeviceHostListener {
         }
         return false;
     }
+
+    private void StopPresenceChecking() {
+        Object[] objectValues = mObjectMap.values().toArray();
+        for (Object object : objectValues) {
+            if (object instanceof TagEndpoint) {
+                TagEndpoint tag = (TagEndpoint)object;
+                ((TagEndpoint) object).stopPresenceChecking();
+            }
+        }
+    }
+
     /**
      * Disconnect any target if present
      */
@@ -2378,8 +2389,23 @@ public class NfcService implements DeviceHostListener {
                 sendMessage(NfcService.MSG_APPLY_SCREEN_STATE, screenState);
             } else if (action.equals(Intent.ACTION_USER_SWITCHED)) {
                 int userId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, 0);
+                int beamSetting = PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
+                try {
+                    IPackageManager mIpm = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
+                    beamSetting = mIpm.getComponentEnabledSetting(new ComponentName(
+                            BeamShareActivity.class.getPackageName$(),
+                            BeamShareActivity.class.getName()),
+                            userId);
+                } catch(RemoteException e) {
+                    Log.e(TAG, "Error int getComponentEnabledSetting for BeamShareActivity");
+                }
                 synchronized (this) {
                     mUserId = userId;
+                    if (beamSetting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                       mIsNdefPushEnabled = false;
+                    } else {
+                       mIsNdefPushEnabled = true;
+                    }
                 }
                 mP2pLinkManager.onUserSwitched(getUserId());
                 if (mIsHceCapable) {
@@ -2419,7 +2445,7 @@ public class NfcService implements DeviceHostListener {
             if (DevicePolicyManager.ACTION_DEVICE_POLICY_MANAGER_STATE_CHANGED
                     .equals(action)) {
                 enforceBeamShareActivityPolicy(context,
-                        new UserHandle(getSendingUserId()), mIsNdefPushEnabled);
+                        new UserHandle(getSendingUserId()));
             }
         }
     };
