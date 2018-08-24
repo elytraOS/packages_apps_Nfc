@@ -82,6 +82,7 @@ import android.se.omapi.ISecureElementService;
 import android.service.vr.IVrManager;
 import android.service.vr.IVrStateCallbacks;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.android.internal.logging.MetricsLogger;
 import com.android.nfc.DeviceHost.DeviceHostListener;
@@ -94,7 +95,10 @@ import com.android.nfc.cardemulation.CardEmulationManager;
 import com.android.nfc.dhimpl.NativeNfcManager;
 import com.android.nfc.handover.HandoverDataParser;
 
+import java.io.File;
 import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
@@ -105,6 +109,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Scanner;
 
 
 public class NfcService implements DeviceHostListener {
@@ -125,6 +130,8 @@ public class NfcService implements DeviceHostListener {
     static final String TRON_NFC_CE = "nfc_ce";
     static final String TRON_NFC_P2P = "nfc_p2p";
     static final String TRON_NFC_TAG = "nfc_tag";
+
+    static final String NATIVE_LOG_FILE_NAME = "native_logs";
 
     static final int MSG_NDEF_TAG = 0;
     static final int MSG_LLCP_LINK_ACTIVATION = 1;
@@ -424,7 +431,7 @@ public class NfcService implements DeviceHostListener {
         }
 
         if (isNfcProvisioningEnabled) {
-            mInProvisionMode = Settings.Secure.getInt(mContentResolver,
+            mInProvisionMode = Settings.Global.getInt(mContentResolver,
                     Settings.Global.DEVICE_PROVISIONED, 0) == 0;
         } else {
             mInProvisionMode = false;
@@ -1662,7 +1669,12 @@ public class NfcService implements DeviceHostListener {
                 Log.w(TAG, "Watchdog thread interruped.");
                 interrupt();
             }
+            if(mRoutingWakeLock.isHeld()){
+                Log.e(TAG, "Watchdog triggered, release lock before aborting.");
+                mRoutingWakeLock.release();
+            }
             Log.e(TAG, "Watchdog triggered, aborting.");
+            storeNativeCrashLogs();
             mDeviceHost.doAbort(getName());
         }
 
@@ -1699,7 +1711,7 @@ public class NfcService implements DeviceHostListener {
             }
             WatchDogThread watchDog = new WatchDogThread("applyRouting", ROUTING_WATCHDOG_MS);
             if (mInProvisionMode) {
-                mInProvisionMode = Settings.Secure.getInt(mContentResolver,
+                mInProvisionMode = Settings.Global.getInt(mContentResolver,
                         Settings.Global.DEVICE_PROVISIONED, 0) == 0;
                 if (!mInProvisionMode) {
                     // Notify dispatcher it's fine to dispatch to any package now
@@ -1777,10 +1789,9 @@ public class NfcService implements DeviceHostListener {
             paramsBuilder.setTechMask(techMask);
             paramsBuilder.setEnableLowPowerDiscovery(false);
             paramsBuilder.setEnableP2p(false);
-        } else {
         }
 
-        if (mIsHceCapable && mReaderModeParams == null) {
+        if (mIsHceCapable && mScreenState >= ScreenStateHelper.SCREEN_STATE_ON_LOCKED && mReaderModeParams == null) {
             // Host routing is always enabled at lock screen or later, provided we aren't in reader mode
             paramsBuilder.setEnableHostRouting(true);
         }
@@ -2103,6 +2114,10 @@ public class NfcService implements DeviceHostListener {
                         // First try to see if this was a bad tag read
                         if (!tag.reconnect()) {
                             tag.disconnect();
+                            if (mScreenState == ScreenStateHelper.SCREEN_STATE_ON_UNLOCKED) {
+                                Toast.makeText(mContext,
+                                        R.string.tag_read_error, Toast.LENGTH_SHORT).show();
+                            }
                             break;
                         }
                     }
@@ -2461,6 +2476,10 @@ public class NfcService implements DeviceHostListener {
             int dispatchResult = mNfcDispatcher.dispatchTag(tag);
             if (dispatchResult == NfcDispatcher.DISPATCH_FAIL) {
                 unregisterObject(tagEndpoint.getHandle());
+                if (mScreenState == ScreenStateHelper.SCREEN_STATE_ON_UNLOCKED) {
+                    Toast.makeText(mContext,
+                            R.string.tag_dispatch_failed, Toast.LENGTH_SHORT).show();
+                }
                 playSound(SOUND_ERROR);
             } else if (dispatchResult == NfcDispatcher.DISPATCH_SUCCESS) {
                 mVibrator.vibrate(mVibrationEffect);
@@ -2608,6 +2627,41 @@ public class NfcService implements DeviceHostListener {
         }
     }
 
+    private void copyNativeCrashLogsIfAny(PrintWriter pw) {
+      try {
+          File file = new File(mContext.getFilesDir(), NATIVE_LOG_FILE_NAME);
+          if (!file.exists()) {
+            return;
+          }
+          pw.println("---BEGIN: NATIVE CRASH LOG----");
+          Scanner sc = new Scanner(file);
+          while(sc.hasNextLine()) {
+              String s = sc.nextLine();
+              pw.println(s);
+          }
+          pw.println("---END: NATIVE CRASH LOG----");
+          sc.close();
+      } catch (IOException e) {
+          Log.e(TAG, "Exception in copyNativeCrashLogsIfAny " + e);
+      }
+    }
+
+    private void storeNativeCrashLogs() {
+      try {
+          File file = new File(mContext.getFilesDir(), NATIVE_LOG_FILE_NAME);
+          if (!file.exists()) {
+              file.createNewFile();
+          }
+
+          FileOutputStream fos = new FileOutputStream(file);
+          mDeviceHost.dump(fos.getFD());
+          fos.flush();
+          fos.close();
+      } catch (IOException e) {
+          Log.e(TAG, "Exception in storeNativeCrashLogs " + e);
+      }
+    }
+
     void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -2627,6 +2681,7 @@ public class NfcService implements DeviceHostListener {
                 mCardEmulationManager.dump(fd, pw, args);
             }
             mNfcDispatcher.dump(fd, pw, args);
+            copyNativeCrashLogsIfAny(pw);
             pw.flush();
             mDeviceHost.dump(fd);
         }

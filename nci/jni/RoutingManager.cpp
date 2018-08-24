@@ -51,7 +51,7 @@ static const int MAX_NUM_EE = 5;
 static const uint8_t SYS_CODE_PWR_STATE_HOST = 0x01;
 static const uint16_t DEFAULT_SYS_CODE = 0xFEFE;
 
-RoutingManager::RoutingManager() {
+RoutingManager::RoutingManager() : mAidRoutingConfigured(false) {
   static const char fn[] = "RoutingManager::RoutingManager()";
 
   mDefaultOffHostRoute =
@@ -366,9 +366,14 @@ bool RoutingManager::addAidRouting(const uint8_t* aid, uint8_t aidLen,
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s: enter", fn);
   uint8_t powerState =
       (route == mDefaultOffHostRoute) ? mOffHostAidRoutingPowerState : 0x01;
+  SyncEventGuard guard(mRoutingEvent);
+  mAidRoutingConfigured = false;
   tNFA_STATUS nfaStat =
       NFA_EeAddAidRouting(route, aidLen, (uint8_t*)aid, powerState, aidInfo);
   if (nfaStat == NFA_STATUS_OK) {
+    mRoutingEvent.wait();
+  }
+  if (mAidRoutingConfigured) {
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s: routed AID", fn);
     return true;
   } else {
@@ -380,8 +385,13 @@ bool RoutingManager::addAidRouting(const uint8_t* aid, uint8_t aidLen,
 bool RoutingManager::removeAidRouting(const uint8_t* aid, uint8_t aidLen) {
   static const char fn[] = "RoutingManager::removeAidRouting";
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s: enter", fn);
+  SyncEventGuard guard(mRoutingEvent);
+  mAidRoutingConfigured = false;
   tNFA_STATUS nfaStat = NFA_EeRemoveAidRouting(aidLen, (uint8_t*)aid);
   if (nfaStat == NFA_STATUS_OK) {
+    mRoutingEvent.wait();
+  }
+  if (mAidRoutingConfigured) {
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s: removed AID", fn);
     return true;
   } else {
@@ -406,7 +416,7 @@ bool RoutingManager::commitRouting() {
 
 void RoutingManager::onNfccShutdown() {
   static const char fn[] = "RoutingManager:onNfccShutdown";
-  if (mDefaultOffHostRoute == 0x00) return;
+  if ((mDefaultOffHostRoute == 0x00) && (mDefaultFelicaRoute == 0x00)) return;
 
   tNFA_STATUS nfaStat = NFA_STATUS_FAILED;
   uint8_t actualNumEe = MAX_NUM_EE;
@@ -419,9 +429,13 @@ void RoutingManager::onNfccShutdown() {
   }
   if (actualNumEe != 0) {
     for (uint8_t xx = 0; xx < actualNumEe; xx++) {
-      if ((eeInfo[xx].num_interface != 0) &&
-          (eeInfo[xx].ee_interface[0] != NCI_NFCEE_INTERFACE_HCI_ACCESS) &&
-          (eeInfo[xx].ee_status == NFA_EE_STATUS_ACTIVE)) {
+      bool bIsOffHostEEPresent =
+          (NFC_GetNCIVersion() < NCI_VERSION_2_0)
+              ? (eeInfo[xx].num_interface != 0)
+              : (eeInfo[xx].ee_interface[0] !=
+                 NCI_NFCEE_INTERFACE_HCI_ACCESS) &&
+                    (eeInfo[xx].ee_status == NFA_EE_STATUS_ACTIVE);
+      if (bIsOffHostEEPresent) {
         DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
             "%s: Handle: 0x%04x Change Status Active to Inactive", fn,
             eeInfo[xx].ee_handle);
@@ -667,6 +681,10 @@ void RoutingManager::nfaEeCallback(tNFA_EE_EVT event,
     case NFA_EE_ADD_AID_EVT: {
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
           "%s: NFA_EE_ADD_AID_EVT  status=%u", fn, eventData->status);
+      SyncEventGuard guard(routingManager.mRoutingEvent);
+      routingManager.mAidRoutingConfigured =
+          (eventData->status == NFA_STATUS_OK);
+      routingManager.mRoutingEvent.notifyOne();
     } break;
 
     case NFA_EE_ADD_SYSCODE_EVT: {
@@ -686,6 +704,10 @@ void RoutingManager::nfaEeCallback(tNFA_EE_EVT event,
     case NFA_EE_REMOVE_AID_EVT: {
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
           "%s: NFA_EE_REMOVE_AID_EVT  status=%u", fn, eventData->status);
+      SyncEventGuard guard(routingManager.mRoutingEvent);
+      routingManager.mAidRoutingConfigured =
+          (eventData->status == NFA_STATUS_OK);
+      routingManager.mRoutingEvent.notifyOne();
     } break;
 
     case NFA_EE_NEW_EE_EVT: {
