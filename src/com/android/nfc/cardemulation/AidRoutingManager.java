@@ -29,6 +29,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import android.util.StatsLog;
+
 public class AidRoutingManager {
 
     static final String TAG = "AidRoutingManager";
@@ -133,7 +135,7 @@ public class AidRoutingManager {
         return routeTableSize;
     }
 
-    void clearNfcRoutingTableLocked() {
+    private void clearNfcRoutingTableLocked() {
         for (Map.Entry<String, Integer> aidEntry : mRouteForAid.entrySet())  {
             String aid = aidEntry.getKey();
             if (aid.endsWith("*")) {
@@ -193,7 +195,7 @@ public class AidRoutingManager {
         return 0;
     }
 
-    public boolean configureRouting(HashMap<String, AidEntry> aidMap) {
+    public boolean configureRouting(HashMap<String, AidEntry> aidMap, boolean force) {
         boolean aidRouteResolved = false;
         HashMap<String, AidEntry> aidRoutingTableCache = new HashMap<String, AidEntry>(aidMap.size());
         ArrayList<Integer> seList = new ArrayList<Integer>();
@@ -231,7 +233,7 @@ public class AidRoutingManager {
         }
 
         synchronized (mLock) {
-            if (routeForAid.equals(mRouteForAid)) {
+            if (routeForAid.equals(mRouteForAid) && !force) {
                 if (DBG) Log.d(TAG, "Routing table unchanged, not updating");
                 return false;
             }
@@ -353,6 +355,7 @@ public class AidRoutingManager {
           if(aidRouteResolved == true) {
               commit(aidRoutingTableCache);
           } else {
+              StatsLog.write(StatsLog.NFC_ERROR_OCCURRED, StatsLog.NFC_ERROR_OCCURRED__TYPE__AID_OVERFLOW, 0, 0);
               Log.e(TAG, "RoutingTable unchanged because it's full, not updating");
           }
         }
@@ -367,7 +370,7 @@ public class AidRoutingManager {
                 int route = aidEntry.getValue().route;
                 int aidType = aidEntry.getValue().aidInfo;
                 String aid = aidEntry.getKey();
-                Log.d (TAG, "commit aid:"+aid+"route:"+route+"aidtype:"+aidType);
+                if (DBG) Log.d (TAG, "commit aid:"+aid+"route:"+route+"aidtype:"+aidType);
 
                 NfcService.getInstance().routeAids(aid, route, aidType);
             }
