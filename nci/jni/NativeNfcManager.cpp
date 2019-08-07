@@ -1165,20 +1165,21 @@ static void nfcManager_doShutdown(JNIEnv*, jobject) {
 }
 
 static void nfcManager_configNfccConfigControl(bool flag) {
-  // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF configuration.
-  if (NFC_GetNCIVersion() != NCI_VERSION_1_0) {
-    uint8_t nfa_set_config[] = {0x00};
+    // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF configuration.
+    if (NFC_GetNCIVersion() != NCI_VERSION_1_0) {
+        uint8_t nfa_set_config[] = { 0x00 };
 
-    nfa_set_config[0] = (flag == true ? 1 : 0);
-    gNfccConfigControlStatus = flag;
+        nfa_set_config[0] = (flag == true ? 1 : 0);
+        gNfccConfigControlStatus = flag;
 
-    tNFA_STATUS status =
-        NFA_SetConfig(NCI_PARAM_ID_NFCC_CONFIG_CONTROL, sizeof(nfa_set_config),
-                      &nfa_set_config[0]);
-    if (status != NFA_STATUS_OK) {
-      LOG(ERROR) << __func__ << ": Failed to configure NFCC_CONFIG_CONTROL";
+        tNFA_STATUS status = NFA_SetConfig(NCI_PARAM_ID_NFCC_CONFIG_CONTROL,
+                                           sizeof(nfa_set_config),
+                                           &nfa_set_config[0]);
+        if (status != NFA_STATUS_OK) {
+            LOG(ERROR) << __func__
+            << ": Failed to configure NFCC_CONFIG_CONTROL";
+        }
     }
-  }
 }
 
 /*******************************************************************************
@@ -1248,8 +1249,7 @@ static void nfcManager_enableDiscovery(JNIEnv* e, jobject o,
         sReaderModeEnabled = true;
         NFA_DisableListening();
 
-        // configure NFCC_CONFIG_CONTROL- NFCC not allowed to manage RF
-        // configuration.
+        // configure NFCC_CONFIG_CONTROL- NFCC not allowed to manage RF configuration.
         nfcManager_configNfccConfigControl(false);
 
         NFA_SetRfDiscoveryDuration(READER_MODE_DISCOVERY_DURATION);
@@ -1258,10 +1258,9 @@ static void nfcManager_enableDiscovery(JNIEnv* e, jobject o,
         sReaderModeEnabled = false;
         NFA_EnableListening();
 
-        // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF
-        // configuration.
-        if (gNfccConfigControlStatus == false) {
-          nfcManager_configNfccConfigControl(true);
+        // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF configuration.
+        if(gNfccConfigControlStatus == false){
+            nfcManager_configNfccConfigControl(true);
         }
 
         NFA_SetRfDiscoveryDuration(nat->discovery_duration);
@@ -2141,8 +2140,8 @@ void doStartupConfig() {
   }
 
   // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF configuration.
-  if (gNfccConfigControlStatus == false) {
-    nfcManager_configNfccConfigControl(true);
+  if(gNfccConfigControlStatus == false){
+      nfcManager_configNfccConfigControl(true);
   }
 }
 
