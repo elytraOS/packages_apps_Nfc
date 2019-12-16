@@ -83,7 +83,6 @@ bool gActivated = false;
 SyncEvent gDeactivatedEvent;
 SyncEvent sNfaSetPowerSubState;
 bool legacy_mfc_reader = true;
-bool gNfccConfigControlStatus = false;
 
 namespace android {
 jmethodID gCachedNfcManagerNotifyNdefMessageListeners;
@@ -892,11 +891,12 @@ static jboolean nfcManager_routeAid(JNIEnv* e, jobject, jbyteArray aid,
   if (aid == NULL) {
     buf = NULL;
     bufLen = 0;
-  } else {
-    ScopedByteArrayRO bytes(e, aid);
-    buf = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&bytes[0]));
-    bufLen = bytes.size();
+    return RoutingManager::getInstance().addAidRouting(buf, bufLen, route,
+                                                       aidInfo);
   }
+  ScopedByteArrayRO bytes(e, aid);
+  buf = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&bytes[0]));
+  bufLen = bytes.size();
   return RoutingManager::getInstance().addAidRouting(buf, bufLen, route,
                                                      aidInfo);
 }
@@ -919,13 +919,12 @@ static jboolean nfcManager_unrouteAid(JNIEnv* e, jobject, jbyteArray aid) {
   if (aid == NULL) {
     buf = NULL;
     bufLen = 0;
-  } else {
-    ScopedByteArrayRO bytes(e, aid);
-    buf = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&bytes[0]));
-    bufLen = bytes.size();
+    return RoutingManager::getInstance().removeAidRouting(buf, bufLen);
   }
-  bool result = RoutingManager::getInstance().removeAidRouting(buf, bufLen);
-  return result;
+  ScopedByteArrayRO bytes(e, aid);
+  buf = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&bytes[0]));
+  bufLen = bytes.size();
+  return RoutingManager::getInstance().removeAidRouting(buf, bufLen);
 }
 
 /*******************************************************************************
@@ -1170,7 +1169,6 @@ static void nfcManager_configNfccConfigControl(bool flag) {
     uint8_t nfa_set_config[] = {0x00};
 
     nfa_set_config[0] = (flag == true ? 1 : 0);
-    gNfccConfigControlStatus = flag;
 
     tNFA_STATUS status =
         NFA_SetConfig(NCI_PARAM_ID_NFCC_CONFIG_CONTROL, sizeof(nfa_set_config),
@@ -1260,9 +1258,7 @@ static void nfcManager_enableDiscovery(JNIEnv* e, jobject o,
 
         // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF
         // configuration.
-        if (gNfccConfigControlStatus == false) {
-          nfcManager_configNfccConfigControl(true);
-        }
+        nfcManager_configNfccConfigControl(true);
 
         NFA_SetRfDiscoveryDuration(nat->discovery_duration);
       }
@@ -2141,9 +2137,8 @@ void doStartupConfig() {
   }
 
   // configure NFCC_CONFIG_CONTROL- NFCC allowed to manage RF configuration.
-  if (gNfccConfigControlStatus == false) {
-    nfcManager_configNfccConfigControl(true);
-  }
+  nfcManager_configNfccConfigControl(true);
+
 }
 
 /*******************************************************************************
