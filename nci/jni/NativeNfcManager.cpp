@@ -18,6 +18,7 @@
 #include <base/logging.h>
 #include <cutils/properties.h>
 #include <errno.h>
+#include <nativehelper/JNIPlatformHelp.h>
 #include <nativehelper/ScopedLocalRef.h>
 #include <nativehelper/ScopedPrimitiveArray.h>
 #include <nativehelper/ScopedUtfChars.h>
@@ -191,8 +192,7 @@ void initializeGlobalDebugEnabledFlag() {
 }
 void initializeMfcReaderOption() {
   legacy_mfc_reader =
-      (NfcConfig::getUnsigned(NAME_LEGACY_MIFARE_READER, 0) != 0) ? true
-                                                                  : false;
+      (NfcConfig::getUnsigned(NAME_LEGACY_MIFARE_READER, 0) != 0) ? true : false;
 
   DLOG_IF(INFO, nfc_debug_enabled)
       << __func__ <<": mifare reader option=" << legacy_mfc_reader;
