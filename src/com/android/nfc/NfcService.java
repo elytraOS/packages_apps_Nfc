@@ -911,7 +911,7 @@ public class NfcService implements DeviceHostListener {
         }
         try {
             mIpm.setComponentEnabledSetting(new ComponentName(
-                    BeamShareActivity.class.getPackageName$(),
+                    BeamShareActivity.class.getPackageName(),
                     BeamShareActivity.class.getName()),
                     isActiveForUser ?
                             PackageManager.COMPONENT_ENABLED_STATE_ENABLED :
@@ -2955,7 +2955,7 @@ public class NfcService implements DeviceHostListener {
                         IPackageManager mIpm = IPackageManager.Stub.asInterface(
                             ServiceManager.getService("package"));
                         beamSetting = mIpm.getComponentEnabledSetting(new ComponentName(
-                                BeamShareActivity.class.getPackageName$(),
+                                BeamShareActivity.class.getPackageName(),
                                 BeamShareActivity.class.getName()),
                                 userId);
                     } catch(RemoteException e) {
