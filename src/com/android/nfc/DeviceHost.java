@@ -51,6 +51,8 @@ public interface DeviceHost {
         public void onNfcTransactionEvent(byte[] aid, byte[] data, String seName);
 
         public void onEeUpdated();
+
+        public void onHwErrorReported();
     }
 
     public interface TagEndpoint {
@@ -188,7 +190,7 @@ public interface DeviceHost {
 
     public boolean sendRawFrame(byte[] data);
 
-    public boolean routeAid(byte[] aid, int route, int aidInfo);
+    public boolean routeAid(byte[] aid, int route, int aidInfo, int power);
 
     public boolean unrouteAid(byte[] aid);
 

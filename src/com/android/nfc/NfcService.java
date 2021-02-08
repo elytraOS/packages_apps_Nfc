@@ -123,6 +123,8 @@ public class NfcService implements DeviceHostListener {
 
     public static final String SERVICE_NAME = "nfc";
 
+    private static final String SYSTEM_UI = "com.android.systemui";
+
     public static final String PREF = "NfcServicePrefs";
 
     static final String PREF_NFC_ON = "nfc_on";
@@ -167,6 +169,8 @@ public class NfcService implements DeviceHostListener {
     static final int MSG_TOAST_DEBOUNCE_EVENT = 19;
     static final int MSG_DELAY_POLLING = 20;
     static final int MSG_ALWAYS_ON_STATE_CHANGED = 21;
+
+    static final String MSG_ROUTE_AID_PARAM_TAG = "power";
 
     // Negative value for NO polling delay
     static final int NO_POLL_DELAY = -1;
@@ -304,6 +308,7 @@ public class NfcService implements DeviceHostListener {
     private SharedPreferences mPrefs;
     private SharedPreferences.Editor mPrefsEditor;
     private PowerManager.WakeLock mRoutingWakeLock;
+    private PowerManager.WakeLock mRequireUnlockWakeLock;
 
     int mStartSound;
     int mEndSound;
@@ -318,6 +323,7 @@ public class NfcService implements DeviceHostListener {
     boolean mIsHceFCapable;
     boolean mIsBeamCapable;
     boolean mIsSecureNfcCapable;
+    boolean mIsRequestUnlockShowed;
 
     int mPollDelay;
     boolean mNotifyDispatchFailed;
@@ -432,6 +438,12 @@ public class NfcService implements DeviceHostListener {
         new ApplyRoutingTask().execute();
     }
 
+    @Override
+    public void onHwErrorReported() {
+        new EnableDisableTask().execute(TASK_DISABLE);
+        new EnableDisableTask().execute(TASK_ENABLE);
+    }
+
     final class ReaderModeParams {
         public int flags;
         public IAppCallback callback;
@@ -483,6 +495,10 @@ public class NfcService implements DeviceHostListener {
 
         mRoutingWakeLock = mPowerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK, "NfcService:mRoutingWakeLock");
+
+        mRequireUnlockWakeLock = mPowerManager.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                        | PowerManager.ACQUIRE_CAUSES_WAKEUP
+                        | PowerManager.ON_AFTER_RELEASE, "NfcService:mRequireUnlockWakeLock");
 
         mKeyguard = (KeyguardManager) mContext.getSystemService(Context.KEYGUARD_SERVICE);
         mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
@@ -1397,7 +1413,7 @@ public class NfcService implements DeviceHostListener {
             int callingPid = Binder.getCallingPid();
             // Allow non-foreground callers with system uid or systemui
             boolean privilegedCaller = (callingUid == Process.SYSTEM_UID
-                    || getPackageNameFromUid(callingUid).equals("com.android.systemui"));
+                    || getPackageNameFromUid(callingUid).equals(SYSTEM_UI));
             if (!privilegedCaller && !mForegroundUtils.isInForeground(callingUid)) {
                 Log.e(TAG, "setReaderMode: Caller is not in foreground and is not system process.");
                 return;
@@ -2309,12 +2325,17 @@ public class NfcService implements DeviceHostListener {
         sendMessage(MSG_MOCK_NDEF, msg);
     }
 
-    public void routeAids(String aid, int route, int aidInfo) {
+    public void routeAids(String aid, int route, int aidInfo, int power) {
         Message msg = mHandler.obtainMessage();
         msg.what = MSG_ROUTE_AID;
         msg.arg1 = route;
         msg.obj = aid;
         msg.arg2 = aidInfo;
+
+        Bundle aidPowerState = new Bundle();
+        aidPowerState.putInt(MSG_ROUTE_AID_PARAM_TAG, power);
+        msg.setData(aidPowerState);
+
         mHandler.sendMessage(msg);
     }
 
@@ -2388,7 +2409,14 @@ public class NfcService implements DeviceHostListener {
                     int route = msg.arg1;
                     int aidInfo = msg.arg2;
                     String aid = (String) msg.obj;
-                    mDeviceHost.routeAid(hexStringToBytes(aid), route, aidInfo);
+
+                    int power = 0x00;
+                    Bundle bundle = msg.getData();
+                    if (bundle != null) {
+                        power = bundle.getInt(MSG_ROUTE_AID_PARAM_TAG);
+                    }
+
+                    mDeviceHost.routeAid(hexStringToBytes(aid), route, aidInfo, power);
                     // Restart polling config
                     break;
                 }
@@ -2597,6 +2625,17 @@ public class NfcService implements DeviceHostListener {
                 case MSG_RF_FIELD_ACTIVATED:
                     Intent fieldOnIntent = new Intent(ACTION_RF_FIELD_ON_DETECTED);
                     sendNfcEeAccessProtectedBroadcast(fieldOnIntent);
+                    if (!mIsRequestUnlockShowed
+                            && mIsSecureNfcEnabled && mKeyguard.isKeyguardLocked()) {
+                        if (DBG) Log.d(TAG, "Request unlock");
+                        mIsRequestUnlockShowed = true;
+                        mRequireUnlockWakeLock.acquire();
+                        Intent requireUnlockIntent =
+                                new Intent(NfcAdapter.ACTION_REQUIRE_UNLOCK_FOR_NFC);
+                        requireUnlockIntent.setPackage(SYSTEM_UI);
+                        mContext.sendBroadcast(requireUnlockIntent);
+                        mRequireUnlockWakeLock.release();
+                    }
                     break;
                 case MSG_RF_FIELD_DEACTIVATED:
                     Intent fieldOffIntent = new Intent(ACTION_RF_FIELD_OFF_DETECTED);
@@ -2654,7 +2693,8 @@ public class NfcService implements DeviceHostListener {
                     }
 
                     if (mScreenState == ScreenStateHelper.SCREEN_STATE_ON_UNLOCKED) {
-                      applyRouting(false);
+                        applyRouting(false);
+                        mIsRequestUnlockShowed = false;
                     }
                     int screen_state_mask = (mNfcUnlockManager.isLockscreenPollingEnabled()) ?
                                 (ScreenStateHelper.SCREEN_POLLING_TAG_MASK | mScreenState) : mScreenState;
