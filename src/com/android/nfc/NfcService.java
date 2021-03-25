@@ -917,7 +917,7 @@ public class NfcService implements DeviceHostListener {
                 return;
             } else if (mState == NfcAdapter.STATE_ON) {
                 updateAlwaysOnState(NfcAdapter.STATE_TURNING_ON);
-                //TODO nfcee power control on cmd
+                mDeviceHost.setNfceePowerAndLinkCtrl(true);
                 updateAlwaysOnState(NfcAdapter.STATE_ON);
             } else if (mState == NfcAdapter.STATE_OFF) {
                 /* Special case when NFCC is OFF without initialize.
@@ -932,7 +932,7 @@ public class NfcService implements DeviceHostListener {
                     return;
                 }
                 disableInternal();
-                //TODO nfcee power control on cmd
+                mDeviceHost.setNfceePowerAndLinkCtrl(true);
                 updateAlwaysOnState(NfcAdapter.STATE_ON);
             }
         }
@@ -949,7 +949,7 @@ public class NfcService implements DeviceHostListener {
                 return;
             } else if (mState == NfcAdapter.STATE_ON) {
                 updateAlwaysOnState(NfcAdapter.STATE_TURNING_OFF);
-                //TODO nfcee power control off cmd
+                mDeviceHost.setNfceePowerAndLinkCtrl(false);
                 updateAlwaysOnState(NfcAdapter.STATE_OFF);
             } else if (mState == NfcAdapter.STATE_OFF) {
                 /* Special case when mState is OFF but NFCC is already initialized.
@@ -958,7 +958,7 @@ public class NfcService implements DeviceHostListener {
                  * All state will switch back to OFF in the end.
                  */
                 updateAlwaysOnState(NfcAdapter.STATE_TURNING_OFF);
-                //TODO nfcee power control off cmd
+                mDeviceHost.setNfceePowerAndLinkCtrl(false);
                 if (!enableInternal()) {
                     updateAlwaysOnState(NfcAdapter.STATE_OFF);
                     return;
