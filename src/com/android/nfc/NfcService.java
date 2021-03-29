@@ -324,6 +324,7 @@ public class NfcService implements DeviceHostListener {
     boolean mIsBeamCapable;
     boolean mIsSecureNfcCapable;
     boolean mIsRequestUnlockShowed;
+    boolean mIsRecovering;
 
     int mPollDelay;
     boolean mNotifyDispatchFailed;
@@ -440,6 +441,8 @@ public class NfcService implements DeviceHostListener {
 
     @Override
     public void onHwErrorReported() {
+        mContext.unregisterReceiver(mReceiver);
+        mIsRecovering = true;
         new EnableDisableTask().execute(TASK_DISABLE);
         new EnableDisableTask().execute(TASK_ENABLE);
     }
@@ -776,7 +779,7 @@ public class NfcService implements DeviceHostListener {
             try {
                 mRoutingWakeLock.acquire();
                 try {
-                    if (!mIsAlwaysOnSupported
+                    if (!mIsAlwaysOnSupported || mIsRecovering
                             || mAlwaysOnState != NfcAdapter.STATE_ON
                             || mAlwaysOnState != NfcAdapter.STATE_TURNING_OFF) {
                         if (!mDeviceHost.initialize()) {
@@ -838,6 +841,16 @@ public class NfcService implements DeviceHostListener {
                 applyRouting(true);
             }
 
+            if (mIsRecovering) {
+                 // Intents for all users
+                 IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+                 filter.addAction(Intent.ACTION_SCREEN_ON);
+                 filter.addAction(Intent.ACTION_USER_PRESENT);
+                 filter.addAction(Intent.ACTION_USER_SWITCHED);
+                 mContext.registerReceiverAsUser(mReceiver, UserHandle.ALL, filter, null, null);
+                 mIsRecovering = false;
+            }
+
             return true;
         }
 
@@ -882,7 +895,7 @@ public class NfcService implements DeviceHostListener {
             mNfcDispatcher.setForegroundDispatch(null, null, null);
 
             boolean result;
-            if (!mIsAlwaysOnSupported
+            if (!mIsAlwaysOnSupported || mIsRecovering
                     || (mAlwaysOnState == NfcAdapter.STATE_OFF)
                     || (mAlwaysOnState == NfcAdapter.STATE_TURNING_OFF)) {
                 result = mDeviceHost.deinitialize();
