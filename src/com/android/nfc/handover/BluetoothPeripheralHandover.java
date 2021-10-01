@@ -36,6 +36,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.ParcelUuid;
+import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -55,7 +56,7 @@ import com.android.nfc.R;
  */
 public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceListener {
     static final String TAG = "BluetoothPeripheralHandover";
-    static final boolean DBG = false;
+    static final boolean DBG = SystemProperties.getBoolean("persist.nfc.debug_enabled", false);
 
     static final String ACTION_ALLOW_CONNECT = "com.android.nfc.handover.action.ALLOW_CONNECT";
     static final String ACTION_DENY_CONNECT = "com.android.nfc.handover.action.DENY_CONNECT";
@@ -270,7 +271,8 @@ public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceList
                         if (mInput.getConnectionState(mDevice)
                                 != BluetoothProfile.STATE_DISCONNECTED) {
                             mHidResult = RESULT_PENDING;
-                            mInput.disconnect(mDevice);
+                            mInput.setConnectionPolicy(mDevice,
+                                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
                             toast(getToastString(R.string.disconnecting_peripheral));
                             break;
                         } else {
@@ -280,14 +282,16 @@ public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceList
                         if (mHeadset.getConnectionState(mDevice)
                                 != BluetoothProfile.STATE_DISCONNECTED) {
                             mHfpResult = RESULT_PENDING;
-                            mHeadset.disconnect(mDevice);
+                            mHeadset.setConnectionPolicy(mDevice,
+                                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
                         } else {
                             mHfpResult = RESULT_DISCONNECTED;
                         }
                         if (mA2dp.getConnectionState(mDevice)
                                 != BluetoothProfile.STATE_DISCONNECTED) {
                             mA2dpResult = RESULT_PENDING;
-                            mA2dp.disconnect(mDevice);
+                            mA2dp.setConnectionPolicy(mDevice,
+                                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
                         } else {
                             mA2dpResult = RESULT_DISCONNECTED;
                         }
@@ -386,7 +390,8 @@ public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceList
                                 BluetoothProfile.STATE_CONNECTED) {
                             if (mIsHeadsetAvailable) {
                                 mHfpResult = RESULT_PENDING;
-                                mHeadset.connect(mDevice);
+                                mHeadset.setConnectionPolicy(mDevice,
+                                    BluetoothProfile.CONNECTION_POLICY_ALLOWED);
                             } else {
                                 mHfpResult = RESULT_DISCONNECTED;
                             }
@@ -396,7 +401,8 @@ public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceList
                         if (mA2dp.getConnectionState(mDevice) != BluetoothProfile.STATE_CONNECTED) {
                             if (mIsA2dpAvailable) {
                                 mA2dpResult = RESULT_PENDING;
-                                mA2dp.connect(mDevice);
+                                mA2dp.setConnectionPolicy(mDevice,
+                                    BluetoothProfile.CONNECTION_POLICY_ALLOWED);
                             } else {
                                 mA2dpResult = RESULT_DISCONNECTED;
                             }
@@ -484,7 +490,10 @@ public class BluetoothPeripheralHandover implements BluetoothProfile.ServiceList
                 mRetryCount = 0;
                 nextStepConnect();
             } else if (bond == BluetoothDevice.BOND_NONE) {
-                if (mRetryCount < MAX_RETRY_COUNT) {
+                int reason = intent.getIntExtra(BluetoothDevice.EXTRA_REASON,
+                        BluetoothAdapter.ERROR);
+                if (mRetryCount < MAX_RETRY_COUNT
+                        && reason != BluetoothDevice.UNBOND_REASON_AUTH_FAILED) {
                     sendRetryMessage(RETRY_PAIRING_WAIT_TIME_MS);
                 } else {
                     toast(getToastString(R.string.pairing_peripheral_failed));

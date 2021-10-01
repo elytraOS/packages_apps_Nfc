@@ -122,7 +122,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class NfcService implements DeviceHostListener {
-    static final boolean DBG = false;
+    static final boolean DBG = SystemProperties.getBoolean("persist.nfc.debug_enabled", false);
     static final String TAG = "NfcService";
 
     public static final String SERVICE_NAME = "nfc";
@@ -897,6 +897,10 @@ public class NfcService implements DeviceHostListener {
             // to avoid the tag being discovered again.
             maybeDisconnectTarget();
 
+            synchronized (NfcService.this) {
+                mPollingDisableDeathRecipients.clear();
+                mReaderModeParams = null;
+            }
             mNfcDispatcher.setForegroundDispatch(null, null, null);
 
             boolean result;
