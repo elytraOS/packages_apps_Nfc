@@ -2109,7 +2109,7 @@ public class NfcService implements DeviceHostListener {
                 int rwSize,int testCaseId) throws RemoteException {
             NfcPermissions.enforceAdminPermissions(mContext);
 
-            if (serviceName.equals(null) || !mIsBeamCapable)
+            if (serviceName == null || !mIsBeamCapable)
                 return false;
 
             mP2pLinkManager.enableExtDtaSnepServer(serviceName, serviceSap, miu, rwSize,testCaseId);
@@ -2151,7 +2151,7 @@ public class NfcService implements DeviceHostListener {
         public boolean registerMessageService(String msgServiceName)
                 throws RemoteException {
             NfcPermissions.enforceAdminPermissions(mContext);
-            if(msgServiceName.equals(null))
+            if(msgServiceName == null)
                 return false;
 
             DtaServiceConnector.setMessageService(msgServiceName);
