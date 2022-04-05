@@ -85,6 +85,7 @@ import android.se.omapi.ISecureElementService;
 import android.service.vr.IVrManager;
 import android.service.vr.IVrStateCallbacks;
 import android.text.TextUtils;
+import android.util.EventLog;
 import android.util.Log;
 import android.util.proto.ProtoOutputStream;
 import android.widget.Toast;
@@ -2083,6 +2084,8 @@ public class NfcService implements DeviceHostListener {
             }
 
             if (DBG) Log.d(TAG, "Tag " + Long.toString(cookie) + " is out of date");
+            EventLog.writeEvent(0x534e4554, "199291025", -1,
+                    "The obsolete tag was attempted to be accessed");
             return false;
         }
     }
@@ -2109,7 +2112,7 @@ public class NfcService implements DeviceHostListener {
                 int rwSize,int testCaseId) throws RemoteException {
             NfcPermissions.enforceAdminPermissions(mContext);
 
-            if (serviceName.equals(null) || !mIsBeamCapable)
+            if (serviceName == null || !mIsBeamCapable)
                 return false;
 
             mP2pLinkManager.enableExtDtaSnepServer(serviceName, serviceSap, miu, rwSize,testCaseId);
@@ -2151,7 +2154,7 @@ public class NfcService implements DeviceHostListener {
         public boolean registerMessageService(String msgServiceName)
                 throws RemoteException {
             NfcPermissions.enforceAdminPermissions(mContext);
-            if(msgServiceName.equals(null))
+            if(msgServiceName == null)
                 return false;
 
             DtaServiceConnector.setMessageService(msgServiceName);
