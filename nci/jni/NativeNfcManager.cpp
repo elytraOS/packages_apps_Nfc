@@ -1173,10 +1173,6 @@ static jboolean nfcManager_doInitialize(JNIEnv* e, jobject o) {
     if (stat == NFA_STATUS_OK) {
       // sIsNfaEnabled indicates whether stack started successfully
       if (sIsNfaEnabled) {
-        /* P2P is configured during initialization, but in reader mode platform
-         * which doesn't support beam feature, P2P is not getting paused. So
-         * after initialization sP2pEnabled flag is set to true */
-        sP2pEnabled = true;
         sRoutingInitialized =
             RoutingManager::getInstance().initialize(getNative(e, o));
         nativeNfcTag_registerNdefTypeHandler();
@@ -1441,7 +1437,8 @@ void nfcManager_disableDiscovery(JNIEnv* e, jobject o) {
   if (!PowerSwitch::getInstance().setModeOff(PowerSwitch::DISCOVERY))
     PowerSwitch::getInstance().setLevel(PowerSwitch::LOW_POWER);
 TheEnd:
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s: exit", __func__);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s: exit: Status = 0x%X", __func__, status);
 }
 
 /*******************************************************************************
